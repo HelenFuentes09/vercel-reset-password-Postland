@@ -381,15 +381,31 @@
             btnText.innerHTML = '<span class="loading"></span>Restableciendo...';
 
             try {
+                console.log('Iniciando actualización de contraseña...');
+
+                // Verificar que tenemos una sesión activa
+                const { data: sessionData } = await supabase.auth.getSession();
+                console.log('Sesión actual:', sessionData?.session ? 'Activa' : 'No activa');
+
+                if (!sessionData?.session) {
+                    throw new Error('No hay sesión activa');
+                }
+
                 // Actualizar la contraseña
-                const { error } = await supabase.auth.updateUser({
+                const { data, error } = await supabase.auth.updateUser({
                     password: password
                 });
 
+                console.log('Resultado de actualización:', { data, error });
+
                 if (error) throw error;
+
+                // Esperar un momento para que la actualización se complete
+                await new Promise(resolve => setTimeout(resolve, 1000));
 
                 // IMPORTANTE: Cerrar sesión después de cambiar la contraseña
                 await supabase.auth.signOut();
+                console.log('Sesión cerrada correctamente');
 
                 showSuccess('¡Contraseña restablecida exitosamente! Ya puedes cerrar esta ventana e iniciar sesión con tu nueva contraseña en la app.');
 
@@ -399,8 +415,9 @@
                 sessionEstablished = false;
 
             } catch (error) {
-                console.error('Error:', error);
-                showError('Hubo un error al restablecer tu contraseña. El enlace puede haber expirado. Por favor solicita uno nuevo.');
+                console.error('Error completo:', error);
+                const errorMessage = error?.message || 'Error desconocido';
+                showError(`Error al restablecer contraseña: ${errorMessage}. Por favor solicita un nuevo enlace.`);
             } finally {
                 submitBtn.disabled = false;
                 btnText.textContent = 'Restablecer Contraseña';
@@ -409,31 +426,59 @@
 
         // Establecer sesión desde el enlace de recuperación
         window.addEventListener('load', async () => {
+            console.log('URL completa:', window.location.href);
+            console.log('Hash:', window.location.hash);
+
             const hashParams = new URLSearchParams(window.location.hash.substring(1));
             const accessToken = hashParams.get('access_token');
             const refreshToken = hashParams.get('refresh_token');
             const type = hashParams.get('type');
 
-            if (type !== 'recovery' || !accessToken) {
+            console.log('Parámetros extraídos:', {
+                type,
+                hasAccessToken: !!accessToken,
+                hasRefreshToken: !!refreshToken
+            });
+
+            if (!accessToken) {
                 showError('Enlace de restablecimiento inválido o expirado. Por favor solicita un nuevo enlace desde la aplicación.');
                 submitBtn.disabled = true;
                 return;
             }
 
+            // Algunos enlaces pueden no tener el type='recovery' explícito, pero si tienen access_token es válido
+            if (type && type !== 'recovery') {
+                showError('Tipo de enlace incorrecto. Por favor solicita un nuevo enlace desde la aplicación.');
+                submitBtn.disabled = true;
+                return;
+            }
+
             try {
+                console.log('Intentando establecer sesión...');
+
                 // CRÍTICO: Establecer la sesión primero
                 const { data, error } = await supabase.auth.setSession({
                     access_token: accessToken,
                     refresh_token: refreshToken
                 });
 
+                console.log('Respuesta de setSession:', { data, error });
+
                 if (error) throw error;
 
+                // Verificar que la sesión se estableció correctamente
+                const { data: verifyData } = await supabase.auth.getSession();
+                console.log('Verificación de sesión:', verifyData?.session ? 'OK' : 'FALLO');
+
+                if (!verifyData?.session) {
+                    throw new Error('La sesión no se estableció correctamente');
+                }
+
                 sessionEstablished = true;
-                console.log('Sesión establecida correctamente');
+                console.log('✅ Sesión establecida correctamente - puedes cambiar la contraseña ahora');
 
             } catch (error) {
-                console.error('Error al establecer sesión:', error);
+                console.error('❌ Error al establecer sesión:', error);
                 showError('No se pudo establecer la sesión. El enlace puede haber expirado. Por favor solicita uno nuevo.');
                 submitBtn.disabled = true;
             }
