@@ -317,7 +317,7 @@
     <script>
         // IMPORTANTE: Reemplaza estos valores con tus credenciales de Supabase
         const SUPABASE_URL = 'https://aqtuvlzmcbkwidpqewoa.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFxdHV2bHptY2Jrd2lkcHFld29hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc2ODU3OTAsImV4cCI6MjA3MzI2MTc5MH0.pvJIZxdaVL0ZPPqBaA4envkvqMlbqIbuUBVgMw5tBv';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFxdHV2bHptY2Jrd2lkcHFld29hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc2ODU3OTAsImV4cCI6MjA3MzI2MTc5MH0.pvJIZxdaVL0ZPPqBaA4envkvqMlbqIbuUBVgMw5tBvI';
 
         const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -372,6 +372,9 @@
             successMessage.style.display = 'none';
         }
 
+        // Variable global para almacenar la sesión
+        let sessionEstablished = false;
+
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             hideMessages();
@@ -386,6 +389,11 @@
 
             if (password !== confirmPassword) {
                 showError('Las contraseñas no coinciden. Por favor verifica e intenta de nuevo.');
+                return;
+            }
+
+            if (!sessionEstablished) {
+                showError('No se pudo establecer la sesión. Por favor solicita un nuevo enlace.');
                 return;
             }
 
@@ -416,14 +424,34 @@
             }
         });
 
-        // Check if we have a valid session from the reset link
+        // Establecer sesión desde el enlace de recuperación
         window.addEventListener('load', async () => {
             const hashParams = new URLSearchParams(window.location.hash.substring(1));
             const accessToken = hashParams.get('access_token');
+            const refreshToken = hashParams.get('refresh_token');
             const type = hashParams.get('type');
 
             if (type !== 'recovery' || !accessToken) {
                 showError('Enlace de restablecimiento inválido o expirado. Por favor solicita un nuevo enlace desde la aplicación.');
+                submitBtn.disabled = true;
+                return;
+            }
+
+            try {
+                // CRÍTICO: Establecer la sesión primero
+                const { data, error } = await supabase.auth.setSession({
+                    access_token: accessToken,
+                    refresh_token: refreshToken
+                });
+
+                if (error) throw error;
+
+                sessionEstablished = true;
+                console.log('Sesión establecida correctamente');
+
+            } catch (error) {
+                console.error('Error al establecer sesión:', error);
+                showError('No se pudo establecer la sesión. El enlace puede haber expirado. Por favor solicita uno nuevo.');
                 submitBtn.disabled = true;
             }
         });
